@@ -1,0 +1,6 @@
+Delivery: Main, Ex6 and Ex8.
+-Union find code is inneficient.
+-Volume has high error in some meshes if compared with blender's native tools.
+
+Other:
+Convex/ Concavity code is incomplete.
