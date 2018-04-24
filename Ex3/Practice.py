@@ -6,13 +6,14 @@ April 14
 
 import bpy
 import mathutils
+from time import time
 
 ########
 #Utils
 ########
 
 #Create F:E data
-def compFaceEdges(obj): #(Faces adjacent to each edge)
+def compFaceEdges(obj): #Returns E{F}
     nEdgs = len(obj.data.edges)
     nFcs = len(obj.data.polygons)    
     edgFcAdj = [()] * nEdgs    
@@ -32,7 +33,7 @@ def compFaceEdges(obj): #(Faces adjacent to each edge)
                         edgFcAdj[i] = edgFcAdj[i] + (j,)      
     return edgFcAdj
 
-def compEdgesFace(obj): #(Edges inside face)
+def compEdgesFace(obj): #Returns F{E}
     nEdgs = len(obj.data.edges)
     nFcs = len(obj.data.polygons)
     fcEdgeList = [()] * nFcs 
@@ -54,7 +55,7 @@ def compEdgesFace(obj): #(Edges inside face)
         printOnce = 0
     return fcEdgeList                  
 
-def faceNedgesByVert(vertCount, faces, edges): #(Faces and edges adjacent to vert)
+def faceNedgesByVert(vertCount, faces, edges): #Returns (V{F}, V{E})
     facesPerVert = [()] * vertCount
     edgesPerVert = [()] * vertCount
     for vIndex in range(vertCount):
@@ -68,6 +69,28 @@ def faceNedgesByVert(vertCount, faces, edges): #(Faces and edges adjacent to ver
                 facesPerVert[vIndex] = facesPerVert[vIndex] + (fIndex, )
     return facesPerVert, edgesPerVert                   
 
+def createObj(data): #Create an object
+    #data[0] = COORDS, data[1] = FACES
+    me = bpy.data.meshes.new("DivMesh") #Create new mesh
+    ob = bpy.data.objects.new("DivObj", me) #Create an object with that mesh
+    ob.location = bpy.context.scene.cursor_location #Position object
+    bpy.context.scene.objects.link(ob) #Link object to scene
+    
+    me.from_pydata(data[0],[],data[1])
+    me.update(calc_edges=True)
+
+def delMeshWithName(name):
+    for itm in bpy.data.objects:
+        if name in itm.name:
+            msh = itm.data
+            itm.select = True
+            bpy.ops.object.delete()
+            bpy.data.meshes.remove(msh)
+
+###############
+#Exercises
+###############
+
 #Ex1 - Simple Subdivision Catmull–Clark
 #New points: Baricenter for each face / mid point of each edge
 def SubDivSimp(obj):
@@ -78,7 +101,6 @@ def SubDivSimp(obj):
     oldVert = []
     newVertF = []
     newVertE = []
-    
     newFacesList = []
     
     for v in verts:
@@ -216,44 +238,55 @@ def CatmullClarkDiv(obj):
     coords = oldVert + newVertE + newVertF #(OLDverts, EDGEverts, FACEverts)
     return coords, newFacesList
 
+#Ex 3 - Lerp function
 def lerpOBJ(vertsSimp, vertsCC, param):
     # interpolate verts coordinates. Face indices will remain the same.
     interpCoords = []
     if (len(vertsSimp) != len(vertsCC)):
         print ("Lerp received incorrect data.")
-        return
+        return 0
     for i in range (len(vertsSimp)):
         #value = (C * A) + ((1-C) * B)
-        X = (param * vertsSimp[i][0]) + ((1-param) * vertsCC[i][0])
-        Y = (param * vertsSimp[i][1]) + ((1-param) * vertsCC[i][1])
-        Z = (param * vertsSimp[i][2]) + ((1-param) * vertsCC[i][2])
+        X = (param * vertsCC[i][0]) + ((1-param) * vertsSimp[i][0])
+        Y = (param * vertsCC[i][1]) + ((1-param) * vertsSimp[i][1])
+        Z = (param * vertsCC[i][2]) + ((1-param) * vertsSimp[i][2])
         interpCoords = interpCoords + [(X, Y, Z)]
-    return interpCoords
+    return interpCoords    
 
-def createObj(data):
-    #data[0] = COORDS, data[1] = FACES
-    me = bpy.data.meshes.new("NewMesh") #Create new mesh
-    ob = bpy.data.objects.new("NewObj", me) #Create an object with that mesh
-    ob.location = bpy.context.scene.cursor_location #Position object
-    bpy.context.scene.objects.link(ob) #Link object to scene
-    
-    me.from_pydata(data[0],[],data[1])
-    me.update(calc_edges=True)
+####################
+def main():
+    t = time() #Get time
 
-#Main:
-def Main():
     curMesh = bpy.data.scenes['Scene'].objects.active
+    curMesh.select = False
     print('Current OBJ: ' + curMesh.name)
     
     #Create the subdivided data.
     simpleSubMesh = SubDivSimp(curMesh)
     CCSubMesh = CatmullClarkDiv(curMesh)
+    # Note: both functions return the same face indices. One of those calculations is reduntant
+    # if both are called
     
-    #Interpolate the vertices of the meshes
-    lerpMesh = (lerpOBJ(simpleSubMesh[0], CCSubMesh[0], 0.5), simpleSubMesh[0])
-    createObj(lerpMesh)
+    #Ex5 - Animation   
+    def div_cbck(scn): #Call by frame
+        delMeshWithName("DivObj") #Clean past subdivision
+        strt = scn.frame_start # Compute time
+        end = scn.frame_end
+        num = end-strt
+        curr = scn.frame_current
+        time = float(curr-strt)/num #time in [0,1]    
+        lerpMesh = (lerpOBJ(simpleSubMesh[0], CCSubMesh[0], time), simpleSubMesh[1]) #Interpolate and create mesh
+        createObj(lerpMesh)
+        
     
-       
-####################
+    bpy.data.scenes['Scene'].frame_end=100
+    bpy.data.scenes['Scene'].frame_current=0
 
-Main()
+    bpy.app.handlers.frame_change_pre.clear()
+    bpy.app.handlers.frame_change_pre.append(div_cbck)
+
+    #Performance
+    print("Script took %6.2f secs.\n\n"%(time()-t))
+    
+######################
+main()
